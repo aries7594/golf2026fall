@@ -142,6 +142,29 @@
         return;
       }
 
+      function renderAppInPlace(htmlStr) {
+        var parser = new DOMParser();
+        var doc = parser.parseFromString(htmlStr, 'text/html');
+        var styles = doc.querySelectorAll('style, link[rel="stylesheet"]');
+        for (var i = 0; i < styles.length; i++) {
+          document.head.appendChild(styles[i].cloneNode(true));
+        }
+        var scripts = doc.querySelectorAll('script');
+        var scriptContents = [];
+        for (var j = 0; j < scripts.length; j++) {
+          scriptContents.push(scripts[j].textContent);
+          if (scripts[j].parentNode) {
+            scripts[j].parentNode.removeChild(scripts[j]);
+          }
+        }
+        document.body.innerHTML = doc.body.innerHTML;
+        for (var k = 0; k < scriptContents.length; k++) {
+          var s = document.createElement('script');
+          s.text = scriptContents[k];
+          document.body.appendChild(s);
+        }
+      }
+
       // Apps Script(doPost -> getAppHtml)에서 합쳐진 최신 화면(Index.html + CourseData.html)을 받아와
       // iframe 없이 현재 github.io 창에 직접 렌더링 (아이폰 GPS 100% 작동 + 코드 분리 유지)
       fetch(GAS_EXEC_URL, {
@@ -158,9 +181,7 @@
               window.__PRELOADED_GROUP_LIST__ = res.data.groupList;
             }
             if (htmlStr) {
-              document.open();
-              document.write(htmlStr);
-              document.close();
+              renderAppInPlace(htmlStr);
               return;
             }
           }

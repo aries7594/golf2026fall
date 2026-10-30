@@ -83,10 +83,19 @@
   <div id="loader">
     <div class="spinner" id="loaderSpinner"></div>
     <div class="load-text" id="loaderText">⛳ 2026 회장배 연결 중...</div>
+    <div id="loaderSub"
+      style="display:none; margin-top:8px; font-size:12.5px; font-weight:600; opacity:0.85; text-align:center; line-height:1.5;">
+    </div>
     <button id="openExtBtn" onclick="openExternalBrowser()"
       style="display:none; margin-top:18px; padding:12px 22px; border-radius:12px; border:1.5px solid #ffd43b; background:#ffffff; color:#800020; font-size:15px; font-weight:800; cursor:pointer; box-shadow:0 4px 12px rgba(0,0,0,0.3);">
       🧭 Safari / 외부 브라우저로 열기
     </button>
+    <button id="retryBtn" onclick="location.reload()"
+      style="display:none; margin-top:18px; padding:12px 22px; border-radius:12px; border:1.5px solid #ffd43b; background:#ffffff; color:#800020; font-size:15px; font-weight:800; cursor:pointer; box-shadow:0 4px 12px rgba(0,0,0,0.3);">
+      🔄 다시 시도
+    </button>
+    <a id="oldWayLink" href="#" onclick="fallbackToIframe(); return false;"
+      style="display:none; margin-top:14px; font-size:11.5px; color:#ffd8e0; text-decoration:underline;">예전 방식으로 열기</a>
   </div>
 
   <!-- 백업용 iframe (Apps Script에 doPost가 아직 배포되지 않았을 때만 자동 작동) -->
@@ -167,29 +176,61 @@
 
       // Apps Script(doPost -> getAppHtml)에서 합쳐진 최신 화면(Index.html + CourseData.html)을 받아와
       // iframe 없이 현재 github.io 창에 직접 렌더링 (아이폰 GPS 100% 작동 + 코드 분리 유지)
-      fetch(GAS_EXEC_URL, {
-        method: 'POST',
-        redirect: 'follow',
-        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-        body: JSON.stringify({ fn: 'getAppHtml', args: [] })
-      })
-        .then(function (r) { return r.json(); })
-        .then(function (res) {
-          if (res && res.ok && res.data) {
-            var htmlStr = (typeof res.data === 'string') ? res.data : res.data.html;
-            if (res.data.groupList) {
-              window.__PRELOADED_GROUP_LIST__ = res.data.groupList;
-            }
-            if (htmlStr) {
-              renderAppInPlace(htmlStr);
-              return;
-            }
-          }
-          fallbackToIframe();
+      // 통신 실패 시 바로 iframe으로 넘어가지 않고 2번 더 자동 재시도 (iframe은 아이폰 GPS가 안 될 수 있음)
+      // ※ 서버가 깨어나는 동안(최대 30초)은 실패가 아니므로 시간 제한 없이 기다림
+      var MAX_TRY = 3;
+      var appRendered = false;
+
+      function loadAppHtml(attempt) {
+        fetch(GAS_EXEC_URL, {
+          method: 'POST',
+          redirect: 'follow',
+          headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+          body: JSON.stringify({ fn: 'getAppHtml', args: [] })
         })
-        .catch(function () {
-          fallbackToIframe();
-        });
+          .then(function (r) { return r.json(); })
+          .then(function (res) {
+            if (res && res.ok && res.data) {
+              var htmlStr = (typeof res.data === 'string') ? res.data : res.data.html;
+              if (res.data.groupList) {
+                window.__PRELOADED_GROUP_LIST__ = res.data.groupList;
+              }
+              if (htmlStr) {
+                appRendered = true;
+                renderAppInPlace(htmlStr);
+                return;
+              }
+            }
+            retryOrFail(attempt);
+          })
+          .catch(function () {
+            if (!appRendered) retryOrFail(attempt); // 화면이 이미 그려졌으면 다시 받지 않음
+          });
+      }
+
+      function retryOrFail(attempt) {
+        var sub = document.getElementById('loaderSub');
+        if (attempt < MAX_TRY) {
+          if (sub) {
+            sub.style.display = 'block';
+            sub.textContent = '통신이 느려 다시 연결하는 중입니다 (' + (attempt + 1) + '/' + MAX_TRY + ')';
+          }
+          setTimeout(function () { loadAppHtml(attempt + 1); }, attempt === 1 ? 1500 : 3000);
+          return;
+        }
+        var spinner = document.getElementById('loaderSpinner');
+        var txt = document.getElementById('loaderText');
+        if (spinner) spinner.style.display = 'none';
+        if (txt) txt.textContent = '📶 서버에 연결하지 못했습니다';
+        if (sub) {
+          sub.style.display = 'block';
+          sub.textContent = '통신이 되는 곳에서 다시 시도해 주세요.';
+        }
+        document.getElementById('retryBtn').style.display = 'inline-block';
+        document.getElementById('oldWayLink').style.display = 'inline-block';
+      }
+
+      loadAppHtml(1);
     })();
   </script>
 </body>
